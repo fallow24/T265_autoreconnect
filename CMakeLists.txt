@@ -10,8 +10,11 @@ project(realsense_pipeline_fix)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   geometry_msgs
+  sensor_msgs
   tf 
   tf2
+  std_msgs
+  message_generation
 )
 
 if (WIN32)
@@ -58,11 +61,10 @@ endif()
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+ add_message_files(
+   FILES
+   CameraPoseAngularVelocity.msg
+ )
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -79,10 +81,12 @@ endif()
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   nav_msgs#   sensor_msgs
-# )
+ generate_messages(
+   DEPENDENCIES
+   std_msgs
+   geometry_msgs
+   sensor_msgs
+ )
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -116,7 +120,8 @@ endif()
 catkin_package(
    INCLUDE_DIRS include
 #  LIBRARIES realsense_pipeline_fix
-   CATKIN_DEPENDS librealsense2 geometry_msgs roscpp
+   CATKIN_DEPENDS librealsense2 geometry_msgs sensor_msgs roscpp message_runtime
+#  CATKIN_DEPENDS message_runtime
 #  DEPENDS system_lib
 )
 
@@ -151,7 +156,7 @@ endif()
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
- add_executable(auto_reconnect src/auto_reconnect.cpp)
+add_executable(auto_reconnect src/auto_reconnect.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -162,6 +167,7 @@ endif()
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 add_dependencies(auto_reconnect ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(auto_reconnect realsense_pipeline_fix_generate_messages_cpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(auto_reconnect
