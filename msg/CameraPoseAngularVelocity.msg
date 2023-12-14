@@ -1,3 +1,4 @@
 Header header
 geometry_msgs/PoseStamped pose
 sensor_msgs/Imu imu
+uint8 tracker_confidence

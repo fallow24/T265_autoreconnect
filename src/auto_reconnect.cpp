@@ -93,6 +93,7 @@ while (ros::ok())
 		// Wrap camera pose and cameras imu data into custom message type
 		published_msg.pose = output_msg;
 		published_msg.imu = imu_msg;
+		published_msg.tracker_confidence = pose_data.tracker_confidence;	// Save camera pose confidence (0 = Failed, 1 = Low, 2 = Medium, 3 = High confidence)
 		published_msg.header = output_msg.header;
 
 				// Publish on ROS topic
