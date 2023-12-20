@@ -39,7 +39,7 @@ rs2::log_to_console(RS2_LOG_SEVERITY_INFO); //verbose, can make this _INFO for l
 rs2::config cfg;
 cfg.enable_stream(RS2_STREAM_POSE, RS2_FORMAT_6DOF);
 cfg.enable_stream(RS2_STREAM_GYRO, RS2_FORMAT_MOTION_XYZ32F);
-cfg.enable_stream(RS2_STREAM_COLOR, RS2_FORMAT_W10);
+//cfg.enable_stream(RS2_STREAM_COLOR, RS2_FORMAT_W10);
 
 auto pipe = std::make_shared<rs2::pipeline>();
 pipe->start(cfg);
@@ -82,6 +82,8 @@ while (ros::ok())
 		auto f_imu = frames.first_or_default(RS2_STREAM_GYRO);
 		// Cast the frame to motion_frame and get its data
 		auto imu_data = f_imu.as<rs2::motion_frame>().get_motion_data();
+
+		ROS_INFO("test");
 
 		// Convert everything into ROS sensor_msgs::Imu
 		imu_msg.header.frame_id = camera_frame;
