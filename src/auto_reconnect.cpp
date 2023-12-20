@@ -83,8 +83,6 @@ while (ros::ok())
 		// Cast the frame to motion_frame and get its data
 		auto imu_data = f_imu.as<rs2::motion_frame>().get_motion_data();
 
-		ROS_INFO("test");
-
 		// Convert everything into ROS sensor_msgs::Imu
 		imu_msg.header.frame_id = camera_frame;
 		imu_msg.header.stamp = ros::Time::now();
