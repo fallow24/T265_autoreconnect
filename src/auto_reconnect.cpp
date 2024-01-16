@@ -10,7 +10,7 @@
 #include <librealsense2/hpp/rs_processing.hpp>
 #include <librealsense2/rs_advanced_mode.hpp>
 
-#include "realsense_pipeline_fix/CameraPoseAngularVelocity.h"
+#include "../../../devel/include/realsense_pipeline_fix/CameraPoseAngularVelocity.h"
 
 const char* pose_topic = "/camera/pose";
 const char* cam_imu_topic = "/camera/imu";
