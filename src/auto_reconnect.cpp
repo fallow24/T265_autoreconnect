@@ -4,6 +4,7 @@
 #include <tf/transform_broadcaster.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <sensor_msgs/Imu.h>
+#include <sensor_msgs/Image.h>
 
 #include <librealsense2/rs.hpp>
 #include <librealsense2/rsutil.h>
@@ -15,6 +16,7 @@
 const char* pose_topic = "/camera/pose";
 const char* cam_imu_topic = "/camera/imu";
 const char* cam_pose_imu_topic = "/camera/poseAndImu";
+const char* cam_images_topic = "/camera/images";
 const char* camera_frame = "camera_frame";
 
 int main(int argc, char** argv) {
@@ -26,9 +28,11 @@ ros::NodeHandle nh;
 ros::Publisher cam_pose = nh.advertise<geometry_msgs::PoseStamped>(pose_topic, 1000);
 ros::Publisher cam_imu = nh.advertise<sensor_msgs::Imu>(cam_imu_topic, 1000);
 ros::Publisher cam_pose_imu = nh.advertise<realsense_pipeline_fix::CameraPoseAngularVelocity>(cam_pose_imu_topic, 1000);
+ros::Publisher cam_imgs = nh.advertise<sensor_msgs::Image>(cam_images_topic, 1000);
 sensor_msgs::Imu imu_msg;
 geometry_msgs::PoseStamped output_msg;
 realsense_pipeline_fix::CameraPoseAngularVelocity published_msg;
+sensor_msgs::Image image_msg;
 bool first_msg_sent = false;
 
 // Also setup Transform Broadcaster for ROS
@@ -39,7 +43,7 @@ rs2::log_to_console(RS2_LOG_SEVERITY_INFO); //verbose, can make this _INFO for l
 rs2::config cfg;
 cfg.enable_stream(RS2_STREAM_POSE, RS2_FORMAT_6DOF);
 cfg.enable_stream(RS2_STREAM_GYRO, RS2_FORMAT_MOTION_XYZ32F);
-//cfg.enable_stream(RS2_STREAM_COLOR, RS2_FORMAT_W10);
+cfg.enable_stream(RS2_STREAM_FISHEYE, RS2_FORMAT_Y16);
 
 auto pipe = std::make_shared<rs2::pipeline>();
 pipe->start(cfg);
@@ -96,10 +100,27 @@ while (ros::ok())
 		published_msg.tracker_confidence = pose_data.tracker_confidence;	// Save camera pose confidence (0 = Failed, 1 = Low, 2 = Medium, 3 = High confidence)
 		published_msg.header = output_msg.header;
 
+
+		auto f_cam = frames.first_or_default(RS2_STREAM_FISHEYE);
+		// Cast the frame to video_frame and get its data
+		auto camera_data = f_cam.as<rs2::frameset>().get_fisheye_frame();
+
+		// Convert everything into ROS sensor_msgs::Image
+		image_msg.header.frame_id = camera_frame;
+		image_msg.header.stamp = ros::Time::now();
+		image_msg.height = camera_data.get_height();
+		image_msg.width = camera_data.get_width();
+
+		// copy data
+		int stepSize = camera_data.get_stride_in_bytes();
+		int dataSize = image_msg.height * stepSize;
+		memcpy(&image_msg.data[0], camera_data.get_data(), dataSize);
+
 				// Publish on ROS topic
 				cam_pose.publish( output_msg );
 				cam_imu.publish( imu_msg );
 				cam_pose_imu.publish( published_msg );
+				cam_imgs.publish ( image_msg );
 
 				br.sendTransform( tf_msg );	
 
