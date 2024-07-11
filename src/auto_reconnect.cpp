@@ -22,17 +22,19 @@
 // Custom msg definition, see "../msg/CameraPoseAngularVelocity.msg"
 #include "../../../devel/include/realsense_pipeline_fix/CameraPoseAngularVelocity.h"
 
-const char* pose_topic = "/camera/pose";
-const char* cam_imu_topic = "/camera/imu";
-const char* cam_pose_imu_topic = "/camera/poseAndImu";
-const char* cam_images_topic = "/camera/images";
-const char* camera_frame = "camera_frame";
+const char *pose_topic = "/camera/pose";
+const char *cam_imu_topic = "/camera/imu";
+const char *cam_pose_imu_topic = "/camera/poseAndImu";
+const char *cam_images_topic_1 = "/camera/images/1";
+const char *cam_images_topic_2 = "/camera/images/2";
+const char *camera_frame = "camera_frame";
 
 // Setup ros publishers
 std::shared_ptr<ros::Publisher> cam_pose;
 std::shared_ptr<ros::Publisher> cam_imu;
 std::shared_ptr<ros::Publisher> cam_pose_imu;
-std::shared_ptr<ros::Publisher> cam_imgs;
+std::shared_ptr<ros::Publisher> cam_imgs_1;
+std::shared_ptr<ros::Publisher> cam_imgs_2;
 
 // ROS msg objects
 sensor_msgs::Imu imu_msg;
@@ -44,28 +46,32 @@ sensor_msgs::Image image_msg;
 std::shared_ptr<tf2_ros::TransformBroadcaster> br;
 geometry_msgs::TransformStamped tf_msg;
 
+// Flag to indicate if we should reset
+bool reset_rs2_pipeline = false;
+
 /**
-* Publishes a realsense2 frame to a ROS topic
-*/
-int rosPublishRS2Frame(const rs2::frame& frame)
+ * Publishes a realsense2 frame to a ROS topic
+ */
+int rosPublishRS2Frame(const rs2::frame &frame)
 {
 	// 6 DoF pose data
 	if (auto pose_frame = frame.as<rs2::pose_frame>())
 	{
 		auto pose_data = frame.as<rs2::pose_frame>().get_pose_data();
 
-		// Sanity check for NaN 
-		if (std::isnan(pose_data.translation.x) || 
-			std::isnan(pose_data.translation.y) ||  
-			std::isnan(pose_data.translation.z) || 
-			std::isnan(pose_data.rotation.x) || 
-			std::isnan(pose_data.rotation.y) || 
-			std::isnan(pose_data.rotation.z) || 
-			std::isnan(pose_data.rotation.w)) 
-			{
-				ROS_WARN("Pose data contains NaN values.");
-				return 0;
-			}
+		// Sanity check for NaN
+		if (std::isnan(pose_data.translation.x) ||
+				std::isnan(pose_data.translation.y) ||
+				std::isnan(pose_data.translation.z) ||
+				std::isnan(pose_data.rotation.x) ||
+				std::isnan(pose_data.rotation.y) ||
+				std::isnan(pose_data.rotation.z) ||
+				std::isnan(pose_data.rotation.w))
+		{
+			ROS_WARN("Pose data contains NaN values.");
+			reset_rs2_pipeline = true;
+			return 0;
+		}
 
 		// Convert everything into ROS geometry_msgs::PoseStamped
 		output_msg.header.frame_id = camera_frame;
@@ -75,9 +81,9 @@ int rosPublishRS2Frame(const rs2::frame& frame)
 		output_msg.pose.position.z = pose_data.translation.y;
 		output_msg.pose.orientation.x = -pose_data.rotation.z;
 		output_msg.pose.orientation.y = -pose_data.rotation.x;
-		output_msg.pose.orientation.z = pose_data.rotation.y;	
+		output_msg.pose.orientation.z = pose_data.rotation.y;
 		output_msg.pose.orientation.w = pose_data.rotation.w;
-		published_msg.tracker_confidence = pose_data.tracker_confidence;	// Save camera pose confidence (0 = Failed, 1 = Low, 2 = Medium, 3 = High confidence)
+		published_msg.tracker_confidence = pose_data.tracker_confidence; // Save camera pose confidence (0 = Failed, 1 = Low, 2 = Medium, 3 = High confidence)
 
 		// Also construct a transformation on the /tf topic between camera_frame and map
 		tf_msg.header.stamp = output_msg.header.stamp;
@@ -90,8 +96,8 @@ int rosPublishRS2Frame(const rs2::frame& frame)
 		tf_msg.transform.rotation.y = output_msg.pose.orientation.y;
 		tf_msg.transform.rotation.z = output_msg.pose.orientation.z;
 		tf_msg.transform.rotation.w = output_msg.pose.orientation.w;
-		cam_pose->publish( output_msg );
-		br->sendTransform( tf_msg );
+		cam_pose->publish(output_msg);
+		br->sendTransform(tf_msg);
 		return 1;
 	}
 
@@ -100,14 +106,15 @@ int rosPublishRS2Frame(const rs2::frame& frame)
 	{
 		auto imu_data = frame.as<rs2::motion_frame>().get_motion_data();
 
-		// Sanity check for NaN 
-		if (std::isnan(imu_data.x) || 
-			std::isnan(imu_data.y) ||  
-			std::isnan(imu_data.z)) 
-			{
-				ROS_WARN("Motion data contains NaN values.");
-				return 0;
-			}
+		// Sanity check for NaN
+		if (std::isnan(imu_data.x) ||
+				std::isnan(imu_data.y) ||
+				std::isnan(imu_data.z))
+		{
+			ROS_WARN("Motion data contains NaN values.");
+			reset_rs2_pipeline = true;
+			return 0;
+		}
 
 		// Convert everything into ROS sensor_msgs::Imu
 		imu_msg.header.frame_id = camera_frame;
@@ -122,19 +129,17 @@ int rosPublishRS2Frame(const rs2::frame& frame)
 		published_msg.header = output_msg.header;
 
 		// Publish on ROS topic
-		cam_imu->publish( imu_msg );
-		cam_pose_imu->publish( published_msg );
+		cam_imu->publish(imu_msg);
+		cam_pose_imu->publish(published_msg);
 		return 1;
 	}
 
-	// Fisheye image data
+	// Fisheye image data (TODO: samples 60 Hz instead of given 30 !!!)
 	else if (auto image_frame = frame.as<rs2::video_frame>())
 	{
 		auto camera_data = frame.as<rs2::video_frame>();
-		if (camera_data.get_profile().stream_index() != 1) {
-			return 0; // ret val of 0 indicates that no msg has been published
-		}
-		// Convert everything into ROS sensor_msgs::Image
+
+		//  Convert everything into ROS sensor_msgs::Image
 		image_msg.header.frame_id = camera_frame;
 		image_msg.header.stamp = ros::Time::now();
 		image_msg.height = camera_data.get_height();
@@ -148,94 +153,100 @@ int rosPublishRS2Frame(const rs2::frame& frame)
 		memcpy(&image_msg.data[0], camera_data.get_data(), dataSize);
 
 		// Publish on ROS topic
-		cam_imgs->publish(image_msg);
-		return 1;
+
+		if (camera_data.get_profile().stream_index() == 1)
+		{
+			cam_imgs_1->publish(image_msg);
+		}
+		else if (camera_data.get_profile().stream_index() == 2)
+		{
+			cam_imgs_2->publish(image_msg);
+		}
 	}
 	return 0; // ret val of 1 indicates that 1 msg has been published
 }
 
-int main(int argc, char** argv) {
-	
+int main(int argc, char **argv)
+{
+
 	// Only for logging
 	std::map<int, int> counters;
-  std::map<int, std::string> stream_names;
-	
+	std::map<int, std::string> stream_names;
+
 	// Mutex lock for frame pipeline
 	std::mutex mutex;
-
+	rs2::syncer syncer;
 	/**
-	* Callback function for librealsense frames.
-	* This function will recognize if the frame contains motion, pose, or image data.
-	* Then it will publish the frame as a ros msgs accordingly.
-	*/ 
-	auto rs2FramesCallback = [&](const rs2::frame& frame) 
+	 * Callback function for librealsense frames.
+	 * This function will recognize if the frame contains motion, pose, or image data.
+	 * Then it will publish the frame as a ros msgs accordingly.
+	 */
+	auto rs2FramesCallback = [&](const rs2::frame &frame)
 	{
 		// Lock the mutex as we access common memory from multiple threads
-		std::lock_guard<std::mutex> lock(mutex);	
-		
-    // All synchronized stream will arrive in a single frameset
+		std::lock_guard<std::mutex> lock(mutex);
+
+		// All synchronized stream will arrive in a single frameset
 		if (rs2::frameset fs = frame.as<rs2::frameset>())
-    {
-      for (const rs2::frame& f : fs)
-			{	
-				rosPublishRS2Frame(f);
-				// Populate logging
-        counters[f.get_profile().unique_id()]++;
+		{
+			for (const rs2::frame &f : fs)
+			{
+				syncer(f);
 			}
-    }
-    // Stream that bypass synchronization (such as IMU) will produce single frames
-    else
-    {
-			rosPublishRS2Frame(frame);
-			// Populate logging
-      counters[frame.get_profile().unique_id()]++;
-    }
-
+		}
+		// Stream that bypass synchronization (such as IMU) will produce single frames
+		else
+		{
+			syncer(frame);
+		}
 	};
-
 	// Setting up ROS Nodehandle
 	ros::init(argc, argv, "custom_t265_node");
 	ROS_INFO("Custom T265 Intel node started. Publishing %s", pose_topic);
 	ros::NodeHandle nh;
-	ros::Rate node_frequency(10000); //Hz
 	// Init Realsense camera
-	rs2::log_to_console(RS2_LOG_SEVERITY_INFO); //verbose, can make this _INFO for less or _DEBUG for more
-	
+	rs2::log_to_console(RS2_LOG_SEVERITY_INFO); // verbose, can make this _INFO for less or _DEBUG for more
+
 	cam_pose = std::make_shared<ros::Publisher>(nh.advertise<geometry_msgs::PoseStamped>(pose_topic, 1000));
 	cam_imu = std::make_shared<ros::Publisher>(nh.advertise<sensor_msgs::Imu>(cam_imu_topic, 1000));
 	cam_pose_imu = std::make_shared<ros::Publisher>(nh.advertise<realsense_pipeline_fix::CameraPoseAngularVelocity>(cam_pose_imu_topic, 1000));
-  cam_imgs = std::make_shared<ros::Publisher>(nh.advertise<sensor_msgs::Image>(cam_images_topic, 1000));
+	cam_imgs_1 = std::make_shared<ros::Publisher>(nh.advertise<sensor_msgs::Image>(cam_images_topic_1, 1000));
+	cam_imgs_2 = std::make_shared<ros::Publisher>(nh.advertise<sensor_msgs::Image>(cam_images_topic_2, 1000));
 	br.reset(new tf2_ros::TransformBroadcaster());
 
 	// Setup Librealsense2 config
 	rs2::config cfg;
 	cfg.enable_stream(RS2_STREAM_POSE, RS2_FORMAT_6DOF);
 	cfg.enable_stream(RS2_STREAM_GYRO, RS2_FORMAT_MOTION_XYZ32F);
-	cfg.enable_stream(RS2_STREAM_FISHEYE, 1, 848, 800, RS2_FORMAT_Y8, 30);
-	cfg.enable_stream(RS2_STREAM_FISHEYE, 2, 848, 800, RS2_FORMAT_Y8, 30); // we only need left image
+	cfg.enable_stream(RS2_STREAM_FISHEYE, 1, 848, 800, RS2_FORMAT_Y8);
+	cfg.enable_stream(RS2_STREAM_FISHEYE, 2, 848, 800, RS2_FORMAT_Y8); // we only need left image
 
 	// Create librealsense2 pipeline object which gets the data
 	ROS_INFO("Setting up Pipeline");
 	auto pipe = std::make_shared<rs2::pipeline>();
 	rs2::pipeline_profile profiles = pipe->start(cfg, rs2FramesCallback);
 
-	// Collect the enabled streams names
-  for (auto p : profiles.get_streams())
-  	stream_names[p.unique_id()] = p.stream_name();
+	std::cout << "RealSense callback sample" << std::endl
+						<< std::endl;
+	while (ros::ok())
+	{
+		if (reset_rs2_pipeline)
+		{
+			ROS_WARN("Resetting pipeline now.");
+			reset_rs2_pipeline = false;
+			pipe->stop();
+			pipe = std::make_shared<rs2::pipeline>();
+			pipe->start(cfg, rs2FramesCallback);
+			ROS_WARN("Success! T265 pipe reset.");
+		}
+		auto frameset = syncer.wait_for_frames(5000);
 
-  std::cout << "RealSense callback sample" << std::endl << std::endl;
-  while (ros::ok())
-  {
-		// TODO: Detect broken pipe (maybe within the callback) and restart the pipe here
-  	std::this_thread::sleep_for(std::chrono::seconds(1));
-    std::lock_guard<std::mutex> lock(mutex);
-
-    std::cout << "\r";
-    for (auto p : counters)
-    {
-      std::cout << stream_names[p.first] << "[" << p.first << "]: " << p.second << " [frames] || ";
-    }
-  }
+		for (size_t i = 0; i < frameset.size(); ++i)
+		{
+			rosPublishRS2Frame(frameset[i]);
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
 
 	return 0;
 } // end main
