@@ -1,5 +1,5 @@
 # T265_autoreconnect
-This ROS program connects to the T265 camera and publishes a synchronized stream of 6DoF-pose, 2 fisheye images, IMU raw data, and most notably **tracker confidence**.
+This ROS program connects to the T265 camera and publishes a synchronized stream of 6DoF-pose, 2 fisheye images, gyroscope raw data, and most notably **tracker confidence**.
 The program will also detect a broken pipe and attempt a reconnect, instead of just loosing all the data without a word. 
 This ROS wrapper is based on a *patched* version of librealsense 2.50. The patch is described in this [issue](https://github.com/IntelRealSense/librealsense/issues/9030#issuecomment-962223017).
 
