@@ -54,6 +54,7 @@ catkin_make
 As of now, the program has no configuration parameters.
 It will output pose data at 200 Hz and fisheye images at 30 Hz.
 It will also perform an automatic reconnect if the pipeline gets broken, i.e., data streaming stops (happens sometimes on many systems).
+And most notably, it outputs the internal "tacker confidence" estimation, that is usually hidden. 
 ```console
 rosrun realsense_pipeline_fix auto_reconnect
 ```
